@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>3D Рекурсия 2: Дерево Пифагора</title>
+    <style>
+        body { margin: 0; overflow: hidden; font-family: 'Segoe UI', sans-serif; }
+        #info {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            color: white;
+            background: rgba(0,0,0,0.65);
+            padding: 12px 20px;
+            border-radius: 12px;
+            pointer-events: none;
+            z-index: 10;
+            text-align: right;
+            backdrop-filter: blur(4px);
+        }
+        .controls-panel {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(0,0,0,0.7);
+            padding: 12px 20px;
+            border-radius: 30px;
+            color: white;
+            display: flex;
+            gap: 15px;
+            z-index: 20;
+            backdrop-filter: blur(5px);
+        }
+        button {
+            background: #2ecc71;
+            border: none;
+            padding: 8px 18px;
+            border-radius: 30px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+        button:hover { background: #27ae60; transform: scale(1.02); }
+        .depth-badge {
+            background: #e67e22;
+            padding: 6px 14px;
+            border-radius: 30px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div id="info">
+        <h2>🌿 3D Рекурсия #2: Дерево ветвления</h2>
+        <p>Каждая ветка разделяется на 2 более тонкие ветки</p>
+        <p>Глубина: <span id="depthLabel">5</span></p>
+    </div>
+    <div class="controls-panel">
+        <button id="decrDepth">− Глубина</button>
+        <span id="depthValue" class="depth-badge">5</span>
+        <button id="incrDepth">+ Глубина</button>
+        <button id="resetCam">⟳ Сброс камеры</button>
+    </div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.128.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.128.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x071a2b);
+        scene.fog = new THREE.FogExp2(0x071a2b, 0.015);
+        
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(5, 4, 8);
+        camera.lookAt(0, 2, 0);
+        
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        document.body.appendChild(renderer.domElement);
+        
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.06;
+        controls.autoRotate = true;
+        controls.autoRotateSpeed = 0.8;
+        controls.target.set(0, 2.5, 0);
+        
+        // Освещение
+        const ambient = new THREE.AmbientLight(0x2c3e50);
+        scene.add(ambient);
+        const mainLight = new THREE.DirectionalLight(0xfff5e6, 1.2);
+        mainLight.position.set(3, 8, 2);
+        mainLight.castShadow = true;
+        scene.add(mainLight);
+        const backLight = new THREE.PointLight(0x88aaff, 0.5);
+        backLight.position.set(-2, 3, -4);
+        scene.add(backLight);
+        const fill = new THREE.PointLight(0xffaa66, 0.4);
+        fill.position.set(1, 2, 3);
+        scene.add(fill);
+        
+        // Земля/трава
+        const ground = new THREE.Mesh(
+            new THREE.PlaneGeometry(12, 12),
+            new THREE.MeshStandardMaterial({ color: 0x2d5a27, roughness: 0.9, metalness: 0.1 })
+        );
+        ground.rotation.x = -Math.PI / 2;
+        ground.position.y = -0.2;
+        ground.receiveShadow = true;
+        scene.add(ground);
+        
+        const grid = new THREE.GridHelper(14, 20, 0x88cc88, 0x336633);
+        grid.position.y = -0.15;
+        scene.add(grid);
+        
+        // Рекурсивная функция построения веток
+        function addBranch(parent, startPoint, direction, length, thickness, angle, depth, maxDepth) {
+            if (depth > maxDepth) return;
+            
+            const endPoint = new THREE.Vector3(
+                startPoint.x + direction.x * length,
+                startPoint.y + direction.y * length,
+                startPoint.z + direction.z * length
+            );
+            
+            // Создаём цилиндр между точками
+            const points = [startPoint.clone(), endPoint.clone()];
+            const geometry = new THREE.CylinderGeometry(thickness, thickness * 0.8, length, 6);
+            const material = new THREE.MeshStandardMaterial({
+                color: new THREE.Color().setHSL(0.1, 0.9, 0.3 - depth * 0.05),
+                roughness: 0.6,
+                metalness: 0.1
+            });
+            const cylinder = new THREE.Mesh(geometry, material);
+            
+            // Вычисляем ориентацию цилиндра
+            const center = new THREE.Vector3().addVectors(startPoint, endPoint).multiplyScalar(0.5);
+            cylinder.position.copy(center);
+            const quaternion = new THREE.Quaternion().setFromUnitVectors(
+                new THREE.Vector3(0, 1, 0),
+                direction.clone().normalize()
+            );
+            cylinder.quaternion.copy(quaternion);
+            cylinder.castShadow = true;
+            cylinder.receiveShadow = false;
+            parent.add(cylinder);
+            
+            // Листва на концах (сферы)
+            if (depth === maxDepth || depth === maxDepth - 1) {
+                const leafMat = new THREE.MeshStandardMaterial({ color: 0x6bb56b, emissive: 0x226622, emissiveIntensity: 0.2 });
+                const leaf = new THREE.Mesh(new THREE.SphereGeometry(thickness * 1.5, 5), leafMat);
+                leaf.position.copy(endPoint);
+                leaf.castShadow = true;
+                parent.add(leaf);
+            }
+            
+            // Рекурсивное ветвление: два направления
+            if (depth < maxDepth) {
+                const newLength = length * 0.7;
+                const newThickness = thickness * 0.65;
+                const angleRad = angle * Math.PI / 180;
+                
+                // Поворачиваем направление вокруг оси Y и X для объёмности
+                const dir1 = direction.clone().applyEuler(new THREE.Euler(angleRad, -angleRad * 0.7, 0));
+                const dir2 = direction.clone().applyEuler(new THREE.Euler(-angleRad * 0.8, angleRad * 0.6, 0));
+                const dir3 = direction.clone().applyEuler(new THREE.Euler(angleRad * 0.5, angleRad, 0));
+                
+                addBranch(parent, endPoint, dir1.normalize(), newLength, newThickness, angle * 0.85, depth + 1, maxDepth);
+                addBranch(parent, endPoint, dir2.normalize(), newLength, newThickness, angle * 0.85, depth + 1, maxDepth);
+                if (depth % 2 === 0) {
+                    addBranch(parent, endPoint, dir3.normalize(), newLength * 0.9, newThickness * 0.9, angle * 0.9, depth + 1, maxDepth);
+                }
+            }
+        }
+        
+        let treeGroup = null;
+        let currentMaxDepth = 5;
+        
+        function rebuildTree(depth) {
+            if (treeGroup) scene.remove(treeGroup);
+            treeGroup = new THREE.Group();
+            
+            const startPos = new THREE.Vector3(0, 0, 0);
+            const upDir = new THREE.Vector3(0, 1, 0);
+            addBranch(treeGroup, startPos, upDir, 1.1, 0.22, 38, 0, depth);
+            
+            scene.add(treeGroup);
+            document.getElementById('depthLabel').innerText = depth;
+            document.getElementById('depthValue').innerText = depth;
+        }
+        
+        // UI
+        document.getElementById('decrDepth').addEventListener('click', () => {
+            if (currentMaxDepth > 1) {
+                currentMaxDepth--;
+                rebuildTree(currentMaxDepth);
+                controls.autoRotate = true;
+            }
+        });
+        document.getElementById('incrDepth').addEventListener('click', () => {
+            if (currentMaxDepth < 7) {
+                currentMaxDepth++;
+                rebuildTree(currentMaxDepth);
+                controls.autoRotate = true;
+            }
+        });
+        document.getElementById('resetCam').addEventListener('click', () => {
+            camera.position.set(5, 4, 8);
+            controls.target.set(0, 2.5, 0);
+            controls.update();
+            controls.autoRotate = true;
+        });
+        
+        rebuildTree(5);
+        
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+        animate();
+        
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
