@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>3D: Человек идёт по лестнице по кругу</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Segoe UI', monospace;
+        }
+        
+        #info {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(0,0,0,0.6);
+            backdrop-filter: blur(8px);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 12px;
+            z-index: 10;
+            pointer-events: none;
+            font-family: monospace;
+        }
+        
+        .instruction {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(0,0,0,0.5);
+            color: #ccc;
+            font-size: 11px;
+            padding: 6px 12px;
+            border-radius: 20px;
+            z-index: 10;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="info">
+        🚶 ЧЕЛОВЕК ИДЁТ ПО ЛЕСТНИЦЕ | круговой маршрут
+    </div>
+    <div class="instruction">
+        🖱 Мышь — вращение | ПКМ — панорама | Скролл — зум
+    </div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.128.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.128.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        
+        // --- Сцена ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x111122);
+        scene.fog = new THREE.FogExp2(0x111122, 0.008);
+        
+        // --- Камера ---
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(5, 3.5, 6);
+        camera.lookAt(0, 1.5, 0);
+        
+        // --- Рендерер ---
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        document.body.appendChild(renderer.domElement);
+        
+        // --- Орбитальный контроль (без авто-кнопок) ---
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.06;
+        controls.autoRotate = false;
+        controls.enableZoom = true;
+        controls.enablePan = true;
+        controls.target.set(0, 1.5, 0);
+        
+        // --- Освещение ---
+        const ambientLight = new THREE.AmbientLight(0x3a4a6a);
+        scene.add(ambientLight);
+        
+        const mainLight = new THREE.DirectionalLight(0xfff5e0, 1.0);
+        mainLight.position.set(4, 8, 3);
+        mainLight.castShadow = true;
+        mainLight.shadow.mapSize.width = 1024;
+        mainLight.shadow.mapSize.height = 1024;
+        scene.add(mainLight);
+        
+        const fillLight = new THREE.PointLight(0x6688aa, 0.4);
+        fillLight.position.set(-2, 3, 2);
+        scene.add(fillLight);
+        
+        const backLight = new THREE.PointLight(0xffaa66, 0.3);
+        backLight.position.set(1, 2, -4);
+        scene.add(backLight);
+        
+        // --- Вспомогательный пол (прозрачный, чтобы не отвлекал) ---
+        const gridHelper = new THREE.GridHelper(12, 20, 0x88aaff, 0x335588);
+        gridHelper.position.y = -0.5;
+        gridHelper.material.transparent = true;
+        gridHelper.material.opacity = 0.25;
+        scene.add(gridHelper);
+        
+        // ========== ЛЕСТНИЦА (круговая спираль) ==========
+        const stairGroup = new THREE.Group();
+        
+        const stepMaterial = new THREE.MeshStandardMaterial({ color: 0xbc9a6c, roughness: 0.7, metalness: 0.1 });
+      const riserMaterial = new THREE.MeshStandardMaterial({ color: 0x8b5a2b, roughness: 0.8 });
+        const railMaterial = new THREE.MeshStandardMaterial({ color: 0xc9ae74, metalness: 0.4, roughness: 0.3 });
+        
+        const stepsCount = 36;      // количество ступеней на круг
+        const radius = 1.8;         // радиус лестницы
+        const stepWidth = 0.45;      // ширина ступени
+        const stepHeight = 0.12;      // высота подъёма за ступень
+        const stepDepth = 0.35;       // глубина ступени
+        
+        let currentY = 0;
+        
+        for (let i = 0; i <= stepsCount; i++) {
+            const angle = (i / stepsCount) * Math.PI * 2;
+            const x = Math.cos(angle) * radius;
+            const z = Math.sin(angle) * radius;
+            
+            // Ступень (плитка)
+            const stepGeo = new THREE.BoxGeometry(stepWidth, stepHeight, stepDepth);
+            const step = new THREE.Mesh(stepGeo, stepMaterial);
+            step.position.set(x, currentY, z);
+            // Поворачиваем ступень радиально
+            step.rotation.y = angle;
+            step.castShadow = true;
+            step.receiveShadow = true;
+            stairGroup.add(step);
+            
+            // Подступёнок (вертикальная часть)
+            if (i > 0) {
+                const riserGeo = new THREE.BoxGeometry(stepWidth, stepHeight * 0.8, stepDepth * 0.1);
+                const riser = new THREE.Mesh(riserGeo, riserMaterial);
+                riser.position.set(x, currentY - stepHeight/2, z);
+                riser.rotation.y = angle;
+                riser.castShadow = true;
+                stairGroup.add(riser);
+            }
+            
+            // Поручень (столбики и перекладина)
+            const railPillarGeo = new THREE.BoxGeometry(0.08, 0.7, 0.08);
+            const pillar = new THREE.Mesh(railPillarGeo, railMaterial);
+            pillar.position.set(x + Math.cos(angle) * (stepWidth/2 + 0.05), currentY + 0.35, z + Math.sin(angle) * (stepWidth/2 + 0.05));
+            pillar.castShadow = true;
+            stairGroup.add(pillar);
+            
+            // Горизонтальный поручень (добавим каждые 6 ступеней для простоты)
+            if (i % 6 === 0 && i > 0) {
+                const prevAngle = ((i-6) / stepsCount) * Math.PI * 2;
+                const prevX = Math.cos(prevAngle) * radius;
+                const prevZ = Math.sin(prevAngle) * radius;
+                const railLength = Math.hypot(x - prevX, z - prevZ);
+                const railGeo = new THREE.BoxGeometry(railLength, 0.08, 0.1);
+                const rail = new THREE.Mesh(railGeo, railMaterial);
+                const midX = (x + prevX) / 2;
+                const midZ = (z + prevZ) / 2;
+                rail.position.set(midX, currentY + 0.7, midZ);
+                rail.rotation.y = Math.atan2(z - prevZ, x - prevX);
+                rail.castShadow = true;
+                stairGroup.add(rail);
+            }
+            
+            currentY += stepHeight;
+        }
+        
+        scene.add(stairGroup);
+        
+        // Центральная колонна (опора)
+        const columnMat = new THREE.MeshStandardMaterial({ color: 0xaa8866, metalness: 0.3 });
+        const column = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.45, currentY + 0.3, 12), columnMat);
+        column.position.set(0, currentY/2, 0);
+        column.castShadow = true;
+        scene.add(column);
+        
+        // ========== ПЕРСОНАЖ (человек) ==========
+        const character = new THREE.Group();
+        
+        // Тело
+        const bodyGeo = new THREE.BoxGeometry(0.4, 0.55, 0.3);
+        const bodyMat = new THREE.MeshStandardMaterial({ color: 0x4a90e2, roughness: 0.3 });
+        const body = new THREE.Mesh(bodyGeo, bodyMat);
+        body.position.y = 0.3;
+        body.castShadow = true;
+        character.add(body);
+        
+        // Голова
+        const headGeo = new THREE.SphereGeometry(0.24, 24, 24);
+        const headMat = new THREE.MeshStandardMaterial({ color: 0xffccaa, roughness: 0.2 });
+        const head = new THREE.Mesh(headGeo, headMat);
+        head.position.y = 0.68;
+      head.castShadow = true;
+        character.add(head);
+        
+        // Глаза
+        const eyeMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
+        const leftEye = new THREE.Mesh(new THREE.SphereGeometry(0.06, 16, 16), eyeMat);
+        leftEye.position.set(-0.09, 0.76, 0.25);
+        character.add(leftEye);
+        const rightEye = new THREE.Mesh(new THREE.SphereGeometry(0.06, 16, 16), eyeMat);
+        rightEye.position.set(0.09, 0.76, 0.25);
+        character.add(rightEye);
+        
+        const pupilMat = new THREE.MeshStandardMaterial({ color: 0x000000 });
+        const leftPupil = new THREE.Mesh(new THREE.SphereGeometry(0.04, 16, 16), pupilMat);
+        leftPupil.position.set(-0.09, 0.75, 0.3);
+        character.add(leftPupil);
+        const rightPupil = new THREE.Mesh(new THREE.SphereGeometry(0.04, 16, 16), pupilMat);
+        rightPupil.position.set(0.09, 0.75, 0.3);
+        character.add(rightPupil);
+        
+        // Ноги
+        const legMat = new THREE.MeshStandardMaterial({ color: 0x2c5a8c });
+        const leftLeg = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.35, 0.13), legMat);
+        leftLeg.position.set(-0.13, 0.1, 0);
+        leftLeg.castShadow = true;
+        character.add(leftLeg);
+        
+        const rightLeg = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.35, 0.13), legMat);
+        rightLeg.position.set(0.13, 0.1, 0);
+        rightLeg.castShadow = true;
+        character.add(rightLeg);
+        
+        // Руки
+        const armMat = new THREE.MeshStandardMaterial({ color: 0x4a90e2 });
+        const leftArm = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.35, 0.11), armMat);
+        leftArm.position.set(-0.3, 0.55, 0);
+        leftArm.castShadow = true;
+        character.add(leftArm);
+        
+        const rightArm = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.35, 0.11), armMat);
+        rightArm.position.set(0.3, 0.55, 0);
+        rightArm.castShadow = true;
+        character.add(rightArm);
+        
+        scene.add(character);
+        
+        // ========== АНИМАЦИЯ ХОДЬБЫ ПО КРУГУ ==========
+        let angleProgress = 0;      // текущий угол (радианы)
+        const walkSpeed = 0.012;    // скорость движения по кругу
+        
+        // Для анимации шагов
+        let stepCycle = 0;
+        
+        // Сохраняем оригинальные позиции
+        const leftLegOrigY = leftLeg.position.y;
+        const rightLegOrigY = rightLeg.position.y;
+        
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            // Движение по кругу
+            angleProgress += walkSpeed;
+            if (angleProgress > Math.PI * 2) {
+                angleProgress -= Math.PI * 2;
+            }
+            
+            // Вычисляем позицию на лестнице
+            const t = angleProgress / (Math.PI * 2);  // 0..1 по кругу
+            const stepIndex = t * stepsCount;
+            const yPos = stepIndex * stepHeight;      // высота по лестнице
+            
+            const xPos = Math.cos(angleProgress) * radius;
+            const zPos = Math.sin(angleProgress) * radius;
+            
+            character.position.set(xPos, yPos + 0.12, zPos);
+            
+            // Поворачиваем персонажа по касательной к окружности
+            const tangentAngle = angleProgress + Math.PI / 2;
+            character.rotation.y = tangentAngle;
+            
+            // Анимация шагов (руки и ноги)
+            stepCycle += 0.18;
+            const swing = Math.sin(stepCycle) * 0.55;
+            
+            leftLeg.rotation.x = swing * 0.7;
+            rightLeg.rotation.x = -swing * 0.7;
+            leftLeg.position.y = leftLegOrigY + Math.abs(swing) * 0.04;
+            rightLeg.position.y = rightLegOrigY + Math.abs(swing) * 0.04;
+            
+            leftArm.rotation.z = swing * 0.9;
+            rightArm.rotation.z = -swing * 0.9;
+            leftArm.rotation.x = swing * 0.4;
+            rightArm.rotation.x = -swing * 0.4;
+            
+            // Голова слегка поворачивается
+            head.rotation.y = Math.sin(stepCycle * 0.8) * 0.12;
+          head.rotation.x = Math.sin(stepCycle * 0.6) * 0.05;
+            
+            // Обновляем камеру
+            controls.update();
+            
+            renderer.render(scene, camera);
+        }
+        
+        animate();
+        
+        // --- Адаптация под размер окна ---
+        window.addEventListener('resize', onWindowResize);
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+        
+        console.log('✅ Человек идёт по круговой лестнице | Без лишних элементов');
+    </script>
+</body>
+</html>
