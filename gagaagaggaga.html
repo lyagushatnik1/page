@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>3D Рекурсия: Снежинка Коха (Фрактальная снежинка)</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Segoe UI', 'Montserrat', system-ui, sans-serif;
+        }
+        
+        #info {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.65);
+            backdrop-filter: blur(10px);
+            color: white;
+            padding: 14px 24px;
+            border-radius: 28px;
+            z-index: 10;
+            pointer-events: none;
+            border-left: 4px solid #66ccff;
+            font-family: monospace;
+        }
+        
+        #info h1 {
+            margin: 0 0 4px 0;
+            font-size: 1.3rem;
+            letter-spacing: 1px;
+        }
+        
+        #info p {
+            margin: 0;
+            font-size: 0.8rem;
+            opacity: 0.85;
+        }
+        
+        #controls {
+            position: absolute;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(10, 20, 40, 0.85);
+            backdrop-filter: blur(12px);
+            padding: 12px 24px;
+            border-radius: 60px;
+            display: flex;
+            gap: 20px;
+            z-index: 20;
+            border: 1px solid rgba(100, 200, 255, 0.3);
+            font-family: monospace;
+        }
+        
+        button {
+            background: #2c5282;
+            border: none;
+            color: white;
+            font-size: 1.2rem;
+            font-weight: bold;
+            padding: 8px 20px;
+            border-radius: 40px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            letter-spacing: 1px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        }
+        
+        button:hover {
+            background: #3182ce;
+            transform: scale(1.02);
+        }
+        
+        .depth-badge {
+            background: #1a4972;
+            padding: 6px 18px;
+            border-radius: 40px;
+            font-weight: bold;
+            font-size: 1.1rem;
+            color: #bbf0ff;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .note {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(0,0,0,0.5);
+            color: #aaa;
+            font-size: 11px;
+            padding: 6px 12px;
+            border-radius: 20px;
+            z-index: 10;
+            font-family: monospace;
+            pointer-events: none;
+        }
+        
+        @media (max-width: 700px) {
+            #controls { gap: 10px; padding: 8px 16px; }
+            button { padding: 5px 14px; font-size: 1rem; }
+            .depth-badge { padding: 4px 12px; font-size: 0.9rem; }
+            #info { top: 12px; left: 12px; padding: 8px 16px; }
+            #info h1 { font-size: 1rem; }
+        }
+    </style>
+</head>
+<body>
+    <div id="info">
+        <h1>❄️ 3D ФРАКТАЛЬНАЯ СНЕЖИНКА (Кривая Коха)</h1>
+        <p>рекурсия | каждая сторона заменяется на 4 сегмента | глубина: <span id="depthDisplay">3</span></p>
+    </div>
+    <div id="controls">
+        <button id="decDepth">− ❄️ Глубже</button>
+        <div class="depth-badge">
+            <span>🌀</span> <span id="depthValue">3</span>
+        </div>
+        <button id="incDepth">Мельче ❄️ +</button>
+        <button id="resetViewBtn">⟳ Сброс камеры</button>
+    </div>
+    <div class="note">
+        🖱️ Мышь — вращение | ПКМ — панорама | Скролл — зум
+    </div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.128.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.128.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+        
+        // --- Инициализация сцены ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x020c1a); // глубокое синее небо
+        scene.fog = new THREE.FogExp2(0x020c1a, 0.008);
+        
+        // --- Камера ---
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(3, 2.5, 5);
+        camera.lookAt(0, 0, 0);
+        
+        // --- Рендереры ---
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true; // для атмосферы, хоть снежинка и не отбрасывает тени
+        renderer.setPixelRatio(window.devicePixelRatio);
+        document.body.appendChild(renderer.domElement);
+        
+        // CSS2 для маленьких меток глубины (эстетика)
+        const labelRenderer = new CSS2DRenderer();
+        labelRenderer.setSize(window.innerWidth, window.innerHeight);
+        labelRenderer.domElement.style.position = 'absolute';
+        labelRenderer.domElement.style.top = '0px';
+        labelRenderer.domElement.style.left = '0px';
+        labelRenderer.domElement.style.pointerEvents = 'none';
+        document.body.appendChild(labelRenderer.domElement);
+        
+        // --- Орбитальный контроль с автовращением ---
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.06;
+        controls.autoRotate = true;
+        controls.autoRotateSpeed = 1.2;
+        controls.enableZoom = true;
+        controls.enablePan = true;
+        controls.zoomSpeed = 1.2;
+        controls.target.set(0, 0, 0);
+        
+        // --- Освещение: объёмный свет, чтобы снежинка сияла ---
+        const ambientLight = new THREE.AmbientLight(0x1a2a4a);
+        scene.add(ambientLight);
+        
+        const mainLight = new THREE.DirectionalLight(0xcceeff, 1.2);
+        mainLight.position.set(2, 5, 3);
+        mainLight.castShadow = false; // для производительности
+        scene.add(mainLight);
+        
+        const fillLight = new THREE.PointLight(0x88aaff, 0.5);
+        fillLight.position.set(-1, 2, 2);
+        scene.add(fillLight);
+        
+        const backLight = new THREE.PointLight(0xffaa88, 0.4);
+        backLight.position.set(0, 1, -3);
+        scene.add(backLight);
+        
+        const rimLight = new THREE.PointLight(0x66ccff, 0.6);
+        rimLight.position.set(1, 1.5, -2);
+        scene.add(rimLight);
+        
+        // --- Декоративные элементы: снежные частицы и слабый туманный ореол ---
+        const particleCount = 800;
+        const particlesGeometry = new THREE.BufferGeometry();
+        const particlePositions = new Float32Array(particleCount * 3);
+        for (let i = 0; i < particleCount; i++) {
+            particlePositions[i*3] = (Math.random() - 0.5) * 35;
+            particlePositions[i*3+1] = (Math.random() - 0.5) * 20;
+            particlePositions[i*3+2] = (Math.random() - 0.5) * 20 - 8;
+        }
+        particlesGeometry.setAttribute('position', new THREE.BufferAttribute(particlePositions, 3));
+        const particleMaterial = new THREE.PointsMaterial({
+            color: 0x88aaff,
+            size: 0.03,
+            transparent: true,
+            opacity: 0.4,
+            blending: THREE.AdditiveBlending
+        });
+        const snowParticles = new THREE.Points(particlesGeometry, particleMaterial);
+        scene.add(snowParticles);
+        
+        // Лёгкий пол / круг под снежинкой (полупрозрачный)
+        const groundRing = new THREE.Mesh(
+            new THREE.RingGeometry(1.2, 2.5, 32),
+            new THREE.MeshStandardMaterial({ color: 0x2266aa, emissive: 0x114466, transparent: true, opacity: 0.2, side: THREE.DoubleSide })
+        );
+        groundRing.rotation.x = -Math.PI / 2;
+        groundRing.position.y = -0.8;
+        scene.add(groundRing);
+        
+        // --- Вспомогательная сетка (пол) ---
+        const gridHelper = new THREE.GridHelper(8, 20, 0x4488aa, 0x335577);
+        gridHelper.position.y = -0.85;
+        gridHelper.material.transparent = true;
+        gridHelper.material.opacity = 0.25;
+        scene.add(gridHelper);
+        
+        // --- Рекурсивная функция для построения кривой Коха (в 3D, но лежит в плоскости XZ) ---
+        // Возвращает массив точек (Vector3) для одного сегмента с заданной глубиной рекурсии.
+        function kochCurveRecursive(start, end, depth, maxDepth) {
+            if (depth === maxDepth) {
+                return [start.clone(), end.clone()];
+            }
+            
+            const direction = new THREE.Vector3().subVectors(end, start);
+            const length = direction.length();
+            
+            // Точки: 1/3, 1/2 с поворотом на 60 градусов, 2/3
+            const oneThird = start.clone().add(direction.clone().multiplyScalar(1/3));
+            const twoThird = start.clone().add(direction.clone().multiplyScalar(2/3));
+            
+            // Для 3D поворота: поворачиваем вектор (1/3 -> 2/3) вокруг перпендикуляра к плоскости XZ (ось Y) на 60°
+            const midVec = new THREE.Vector3().subVectors(twoThird, oneThird);
+            const angle = Math.PI / 3; // 60 градусов
+            
+            // Вращение в плоскости XZ (ось Y)
+            const rotatedMid = midVec.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), angle);
+            const peak = oneThird.clone().add(rotatedMid);
+            
+            // Рекурсивно собираем точки
+            const points = [];
+            points.push(...kochCurveRecursive(start, oneThird, depth + 1, maxDepth));
+            points.push(...kochCurveRecursive(oneThird, peak, depth + 1, maxDepth));
+            points.push(...kochCurveRecursive(peak, twoThird, depth + 1, maxDepth));
+            points.push(...kochCurveRecursive(twoThird, end, depth + 1, maxDepth));
+            
+            // Убираем дубликаты стыков (каждый сегмент начинает с предыдущей конечной точки)
+            return points;
+        }
+        
+        // Создаёт замкнутую снежинку из 3 сторон равностороннего треугольника
+        function createSnowflake(depth) {
+            const radius = 1.6;
+            // Вершины равностороннего треугольника в плоскости XZ
+            const angles = [0, 120, 240].map(deg => deg * Math.PI / 180);
+            const vertices = angles.map(ang => new THREE.Vector3(Math.cos(ang) * radius, 0, Math.sin(ang) * radius));
+            
+            let allPoints = [];
+            // Для каждой стороны строим кривую Коха
+            for (let i = 0; i < vertices.length; i++) {
+                const start = vertices[i];
+                const end = vertices[(i+1) % vertices.length];
+                const segmentPoints = kochCurveRecursive(start, end, 0, depth);
+                // segmentPoints содержит начало и конец каждого подсегмента (включая дубликаты на стыках)
+                // Добавляем точки, исключая последнюю дубликатную для плавности (кроме последней стороны)
+                if (i < vertices.length - 1) {
+                    allPoints.push(...segmentPoints.slice(0, -1));
+                } else {
+                    allPoints.push(...segmentPoints);
+                }
+            }
+            
+            // Убираем почти одинаковые точки (необязательная чистка, но для красоты)
+            const uniquePoints = [];
+            const epsilon = 0.001;
+            for (let p of allPoints) {
+                if (uniquePoints.length === 0 || !uniquePoints[uniquePoints.length-1].equals(p, epsilon)) {
+                    uniquePoints.push(p.clone());
+                }
+            }
+            
+            return uniquePoints;
+        }
+        
+        // --- Построение 3D-линии (трубчатая геометрия для объёма) ---
+        function createSnowflakeMesh(points, depthLevel) {
+            // Создаём плавную линию из точек (CatmullRomCurve3 для сглаживания)
+            const curve = new THREE.CatmullRomCurve3(points);
+            curve.curveType = 'centripetal';
+            curve.closed = true;
+            
+            // Толщина зависит от глубины (чем глубже, тем тоньше ветви, но для наглядности единая толщина)
+            const tubeRadius = 0.045;
+            const tubularSegments = 180;
+            const radialSegments = 6;
+            const tubeGeometry = new THREE.TubeGeometry(curve, tubularSegments, tubeRadius, radialSegments, true);
+            
+            // Цвет: от голубого к белому/ледяному в зависимости от глубины
+            const hue = 0.55; // голубоватый оттенок
+            const saturation = 0.8;
+            let lightness = 0.6 + (depthLevel * 0.08);
+            lightness = Math.min(lightness, 0.95);
+            const mainColor = new THREE.Color().setHSL(hue, saturation, lightness);
+            
+            const material = new THREE.MeshStandardMaterial({
+                color: mainColor,
+                emissive: new THREE.Color().setHSL(hue, 0.9, 0.15),
+                emissiveIntensity: 0.35,
+                roughness: 0.25,
+                metalness: 0.85,
+                flatShading: false
+            });
+            
+            const tubeMesh = new THREE.Mesh(tubeGeometry, material);
+            tubeMesh.castShadow = true;
+            tubeMesh.receiveShadow = false;
+            
+            // Добавляем свечение по краям (дополнительные линии)
+            const edgesGeo = new THREE.EdgesGeometry(tubeGeometry);
+            const edgesMat = new THREE.LineBasicMaterial({ color: 0xaaffff, linewidth: 1 });
+            const wireframe = new THREE.LineSegments(edgesGeo, edgesMat);
+            tubeMesh.add(wireframe);
+            
+            return tubeMesh;
+        }
+        
+        // --- Добавим небольшие ледяные кристаллы в узлах (опционально) ---
+        function addJewelPoints(parent, points, depth) {
+            if (depth < 1) return;
+            // Добавляем сферы на вершины (каждую 3-ю точку для эстетики)
+            const step = Math.max(1, Math.floor(points.length / 45));
+            const jewelMat = new THREE.MeshStandardMaterial({
+                color: 0x88ddff,
+                emissive: 0x4488aa,
+                emissiveIntensity: 0.4,
+                roughness: 0.2,
+                metalness: 0.9
+            });
+            for (let i = 0; i < points.length; i += step) {
+                const sphereGeo = new THREE.SphereGeometry(0.035, 8, 8);
+                const jewel = new THREE.Mesh(sphereGeo, jewelMat);
+                jewel.position.copy(points[i]);
+                parent.add(jewel);
+            }
+        }
+        
+        // --- Управление отображением снежинки ---
+        let currentSnowflakeGroup = null;
+        let currentDepth = 3;
+        let currentPointsCache = null;
+        
+        function rebuildSnowflake(depth) {
+            if (currentSnowflakeGroup) {
+                scene.remove(currentSnowflakeGroup);
+                // очистка
+                if (currentSnowflakeGroup.children) {
+                    currentSnowflakeGroup.children.forEach(child => {
+                        if (child.isMesh) child.geometry.dispose();
+                    });
+                }
+            }
+            
+            currentSnowflakeGroup = new THREE.Group();
+            
+            // Генерируем точки кривой
+            const points = createSnowflake(depth);
+            currentPointsCache = points;
+            
+            // Основной объёмный контур
+            const snowflakeMesh = createSnowflakeMesh(points, depth);
+            currentSnowflakeGroup.add(snowflakeMesh);
+            
+            // Добавляем маленькие кристаллы в узлах
+            addJewelPoints(currentSnowflakeGroup, points, depth);
+            
+            // Добавляем едва заметное свечение вокруг центра (атмосфера)
+            const glowGeometry = new THREE.SphereGeometry(0.28, 16, 16);
+            const glowMaterial = new THREE.MeshStandardMaterial({
+                color: 0x88bbff,
+                emissive: 0x4488cc,
+                emissiveIntensity: 0.5,
+                transparent: true,
+                opacity: 0.2
+            });
+            const coreGlow = new THREE.Mesh(glowGeometry, glowMaterial);
+            currentSnowflakeGroup.add(coreGlow);
+            
+            scene.add(currentSnowflakeGroup);
+            
+            // Обновляем отображение глубины в UI
+            document.getElementById('depthDisplay').innerText = depth;
+            document.getElementById('depthValue').innerText = depth;
+        }
+        
+        // --- UI события ---
+        const decBtn = document.getElementById('decDepth');
+        const incBtn = document.getElementById('incDepth');
+        const resetBtn = document.getElementById('resetViewBtn');
+        
+        decBtn.addEventListener('click', () => {
+            if (currentDepth > 1) {
+                currentDepth--;
+                rebuildSnowflake(currentDepth);
+                controls.autoRotate = true;
+            }
+        });
+        
+        incBtn.addEventListener('click', () => {
+            if (currentDepth < 5) {  // максимум 5, чтобы не перегружать (глубина 5 уже очень детально)
+                currentDepth++;
+                rebuildSnowflake(currentDepth);
+                controls.autoRotate = true;
+            }
+        });
+        
+        resetBtn.addEventListener('click', () => {
+            camera.position.set(3, 2.5, 5);
+            controls.target.set(0, 0, 0);
+            controls.update();
+            controls.autoRotate = true;
+        });
+        
+        // Инициализация снежинки глубиной 3
+        rebuildSnowflake(3);
+        
+        // --- Анимация частиц (лёгкое движение) ---
+        let time = 0;
+        
+        // --- Рендер-цикл ---
+        function animate() {
+            requestAnimationFrame(animate);
+            time += 0.008;
+            
+            // Плавное движение снежных частиц
+            snowParticles.rotation.y = time * 0.05;
+            snowParticles.rotation.x = Math.sin(time * 0.1) * 0.1;
+            
+            // Медленное вращение самого объекта не нужно, так как autoRotate камеры включён
+            controls.update(); 
+            
+            renderer.render(scene, camera);
+            labelRenderer.render(scene, camera);
+        }
+        
+        animate();
+        
+        // --- Адаптация под размер окна ---
+        window.addEventListener('resize', onWindowResize, false);
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            labelRenderer.setSize(window.innerWidth, window.innerHeight);
+        }
+        
+        // Маленький лог для консоли (необязательно)
+        console.log('❄️ 3D Снежинка Коха | Рекурсивный фрактал | Глубина от 1 до 5');
+    </script>
+</body>
+</html>
